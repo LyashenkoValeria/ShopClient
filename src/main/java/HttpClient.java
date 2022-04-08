@@ -3,6 +3,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import lombok.SneakyThrows;
 import okhttp3.*;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -21,8 +23,11 @@ public class HttpClient {
     @SneakyThrows
     public int authorization(String name) {
         Product user = getUser(name);
+        Products products = new Products();
+        products.getProducts().add(user);
         ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-        RequestBody formBody = RequestBody.create(ow.writeValueAsString(user), JSON);
+        String test = ow.writeValueAsString(products);
+        RequestBody formBody = RequestBody.create(ow.writeValueAsString(test), JSON);
         Request request = new Request.Builder()
                 .url(url + "/auth")
                 .post(formBody)
@@ -46,8 +51,11 @@ public class HttpClient {
 
     @SneakyThrows
     public int addProduct(Product product) {
+        Products products = new Products();
+        products.getProducts().add(product);
         ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-        RequestBody formBody = RequestBody.create(ow.writeValueAsString(product), JSON);
+        String test = ow.writeValueAsString(products);
+        RequestBody formBody = RequestBody.create(ow.writeValueAsString(test), JSON);
         Request request = new Request.Builder()
                 .url(url + "/add")
                 .post(formBody)

@@ -26,7 +26,8 @@ public class Client {
     public Client(int port, String host) {
         this.port = port;
         this.host = host;
-        this.httpClient = new HttpClient("http://" + host + ":" + port + "/shop");
+        //this.httpClient = new HttpClient("http://" + host + ":" + port + "/shop");
+        this.httpClient = new HttpClient("http://" + host + ":" + port);
     }
 
 
@@ -112,7 +113,7 @@ public class Client {
     private void add(String name, String n, String p){
         try {
             int count = Integer.parseInt(n);
-            int price = Integer.parseInt(n);
+            int price = Integer.parseInt(p);
             Product newProduct = new Product(clientName, name, count, price);
             int result = httpClient.addProduct(newProduct);
 
