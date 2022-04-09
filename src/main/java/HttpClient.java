@@ -1,12 +1,10 @@
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import com.fasterxml.jackson.databind.type.MapType;
+import com.fasterxml.jackson.databind.type.TypeFactory;
 import lombok.SneakyThrows;
 import okhttp3.*;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 public class HttpClient {
     private String url;
@@ -21,19 +19,23 @@ public class HttpClient {
 
 
     @SneakyThrows
-    public int authorization(String name) {
+    public ResponseCode authorization(String name) {
         Product user = getUser(name);
         Products products = new Products();
         products.getProducts().add(user);
         ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-        String test = ow.writeValueAsString(products);
-        RequestBody formBody = RequestBody.create(ow.writeValueAsString(test), JSON);
+        String jsonString = ow.writeValueAsString(products);
+        RequestBody formBody = RequestBody.create(jsonString, JSON);
         Request request = new Request.Builder()
                 .url(url + "/auth")
+                .header("Content-Type", "application/json")
                 .post(formBody)
                 .build();
         Response response = client.newCall(request).execute();
-        return response.code();
+
+        ObjectMapper mapper = new ObjectMapper();
+        Code code = mapper.readValue(response.body().string(), Code.class);
+        return code.getCode();
     }
 
     @SneakyThrows
@@ -45,48 +47,70 @@ public class HttpClient {
         Response response = client.newCall(request).execute();
         String json = Objects.requireNonNull(response.body()).string();
         response.close();
-        return mapper.readValue(json, new TypeReference<>() {
-        });
+
+        TypeFactory typeFactory = mapper.getTypeFactory();
+        MapType mapType = typeFactory.constructMapType(HashMap.class, String.class, Product[].class);
+        Map<String, Product[]> map = mapper.readValue(json, mapType);
+        List<Product> list = Arrays.asList(map.get("products"));
+
+        return list;
     }
 
     @SneakyThrows
-    public int addProduct(Product product) {
+    public ResponseCode addProduct(Product product) {
         Products products = new Products();
         products.getProducts().add(product);
         ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-        String test = ow.writeValueAsString(products);
-        RequestBody formBody = RequestBody.create(ow.writeValueAsString(test), JSON);
+        String jsonString = ow.writeValueAsString(products);
+        RequestBody formBody = RequestBody.create(jsonString, JSON);
         Request request = new Request.Builder()
                 .url(url + "/add")
+                .header("Content-Type", "application/json")
                 .post(formBody)
                 .build();
         Response response = client.newCall(request).execute();
-        return response.code();
+
+        ObjectMapper mapper = new ObjectMapper();
+        Code code = mapper.readValue(response.body().string(), Code.class);
+        return code.getCode();
     }
 
     @SneakyThrows
-    public Response buyProduct(List<Product> basket) {
+    public ResponseCode buyProduct(List<Product> basket) {
+        Products products = new Products();
+        products.setProducts(basket);
         ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-        RequestBody formBody = RequestBody.create(ow.writeValueAsString(basket), JSON);
+        RequestBody formBody = RequestBody.create(ow.writeValueAsString(products), JSON);
+
         Request request = new Request.Builder()
                 .url(url + "/buy")
                 .post(formBody)
                 .build();
         Response response = client.newCall(request).execute();
-        return response;
+
+        ObjectMapper mapper = new ObjectMapper();
+        Code code = mapper.readValue(response.body().string(), Code.class);
+        return code.getCode();
     }
 
     @SneakyThrows
-    public int disconnect(String name) {
+    public ResponseCode disconnect(String name) {
         Product user = getUser(name);
+        Products products = new Products();
+        products.getProducts().add(user);
         ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
-        RequestBody formBody = RequestBody.create(ow.writeValueAsString(user), JSON);
+        String jsonString = ow.writeValueAsString(products);
+        RequestBody formBody = RequestBody.create(jsonString, JSON);
         Request request = new Request.Builder()
                 .url(url + "/disconnect")
+                .header("Content-Type", "application/json")
                 .post(formBody)
                 .build();
         Response response = client.newCall(request).execute();
-        return response.code();
+
+        ObjectMapper mapper = new ObjectMapper();
+        Code code = mapper.readValue(response.body().string(), Code.class);
+        return code.getCode();
     }
 
     private Product getUser(String name){

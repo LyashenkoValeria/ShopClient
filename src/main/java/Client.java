@@ -1,14 +1,9 @@
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.SneakyThrows;
-import okhttp3.Response;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Objects;
 
 public class Client {
     private final static int MIN_NAME_SIZE = 2;
@@ -26,7 +21,6 @@ public class Client {
     public Client(int port, String host) {
         this.port = port;
         this.host = host;
-        //this.httpClient = new HttpClient("http://" + host + ":" + port + "/shop");
         this.httpClient = new HttpClient("http://" + host + ":" + port);
     }
 
@@ -56,6 +50,7 @@ public class Client {
                     case "/removeAll" -> removeAll();
                     case "/checkout" -> checkout();
                     case "/buy" -> buy();
+                    case "/disconnect" -> disconnect();
                     case "/quit" -> quit();
                 }
 
@@ -74,8 +69,10 @@ public class Client {
                 if (clientName.length() < MIN_NAME_SIZE || clientName.length() > MAX_NAME_SIZE || clientName.contains(" ")) {
                     System.out.println("Неверно задано имя. Длина 2-32 символов, без пробелов");
                 } else {
-                    auth();
-                    break;
+                    boolean isConnected = auth();
+                    if (isConnected) {
+                        break;
+                    }
                 }
             }
         } catch (IOException e) {
@@ -84,10 +81,22 @@ public class Client {
         }
     }
 
-    private void auth(){
-        int code = httpClient.authorization(clientName);
-        if (code == 200) System.out.println("Вы успешно вошли в магазин!");
-        else System.out.println("Ошибка при подключении к серверу. Повторите попытку");
+    private boolean auth(){
+        ResponseCode code = httpClient.authorization(clientName);
+        boolean isConnected = false;
+        switch (code){
+            case USER_ADDED -> {
+                System.out.println("Вы успешно зарегистрировались в магазине!");
+                isConnected = true;
+            }
+            case USER_NOT_ADDED -> System.out.println("Не удалось зарегистрироваться в магазине. Повторите попытку");
+            case USER_AUTHORIZED -> {
+                System.out.println("Вы успешно зашли в магазин!");
+                isConnected = true;
+            }
+            default -> System.out.println("Ошибка при подключении к серверу. Повторите попытку");
+        }
+        return isConnected;
     }
 
     private void help() {
@@ -100,14 +109,17 @@ public class Client {
         System.out.println("/removeAll - полностью очистить корзину");
         System.out.println("/checkout - проверить корзину");
         System.out.println("/buy - купить все товары, находящиеся в корзине");
-        System.out.println("/quit - завершение работы");
+        System.out.println("/disconnect - удалить этого пользователя с сервера и завершить работу в магазине");
+        System.out.println("/quit - завершить работу без удаления этого пользователя");
     }
 
     private void list(){
         shopList = httpClient.getList();
-        for (Product product: shopList){
-            product.productToString();
-        }
+        if (shopList.size() != 0) {
+            for (Product product : shopList) {
+                product.productToString();
+            }
+        } else System.out.println("В магазине пока что ничего нет");
     }
 
     private void add(String name, String n, String p){
@@ -115,33 +127,38 @@ public class Client {
             int count = Integer.parseInt(n);
             int price = Integer.parseInt(p);
             Product newProduct = new Product(clientName, name, count, price);
-            int result = httpClient.addProduct(newProduct);
+            ResponseCode code = httpClient.addProduct(newProduct);
 
-            if (result == 201) System.out.println("В магазин был успешно добавлен товар " + name);
-            else System.out.println("Ошибка при отправке на сервер. Повторите попытку");
+            switch (code){
+                case PRODUCT_ADDED -> System.out.println("Продукт " + name +  " был добавлен в магазин");
+                case PRODUCT_NOT_ADDED -> System.out.println("Не удалось добавить продукт "+ name + " в магазин. Повторите попытку");
+                default -> System.out.println("Ошибка при отправке на сервер. Повторите попытку");
+            }
         } catch (NumberFormatException e) {
             System.out.println("Некорректно заданы аргументы");
         }
-        System.out.println("Команда /add в работе");
     }
 
     private void put(String name, String n) {
         try {
             int count = Integer.parseInt(n);
-            boolean inBasket = checkBasket(name);
-            if (inBasket){
-                for(Product product: basket){
-                    if (product.getProductName().equals(name)) {
-                        product.setCount(product.getCount() + count);
-                        System.out.println("Количество товара " + name + " увеличено. Теперь в корзине "
-                                + product.getCount());
-                        break;
+            int price = checkShop(name, count);
+            if (price != -1) {
+                boolean inBasket = checkBasket(name);
+                if (inBasket) {
+                    for (Product product : basket) {
+                        if (product.getProductName().equals(name)) {
+                            product.setCount(product.getCount() + count);
+                            System.out.println("Количество товара " + name + " увеличено. Теперь в корзине "
+                                    + product.getCount());
+                            break;
+                        }
                     }
+                } else {
+                    Product newProduct = new Product(clientName, name, count, price);
+                    basket.add(newProduct);
+                    System.out.println("В корзину успешно добавлен товар - " + name);
                 }
-            } else {
-                Product newProduct = new Product(clientName, name, count, null);
-                basket.add(newProduct);
-                System.out.println("В корзину успешно добавлен товар - " + name);
             }
         } catch (NumberFormatException e) {
             System.out.println("Число товаров задано некорректно");
@@ -194,27 +211,39 @@ public class Client {
         }
     }
 
-    @SneakyThrows
+
     private void buy(){
-        ObjectMapper mapper = new ObjectMapper();
-        Response sum = httpClient.buyProduct(basket);
-        if (sum.code() == 200) {
-            String json = Objects.requireNonNull(sum.body()).string();
-            Product result = mapper.readValue(json, Product.class);
-            System.out.println("Покупка на сумму " + result.getPrice() + " успешно совершена!");
-        } else {
-            System.out.println("При покупке возникли проблемы");
+        int sum = 0;
+        for (Product product: basket){
+            sum += product.getPrice()*product.getCount();
+        }
+        ResponseCode code = httpClient.buyProduct(basket);
+        switch (code){
+            case PURCHASE_COMPLETE -> {
+                System.out.println("Покупка на сумму " + sum + " прошла успешно");
+                basket.clear();
+            }
+            case PURCHASE_NOT_COMPLETE -> System.out.println("Покупка не удалась");
+            default -> System.out.println("Ошибка при покупке на сервере. Повторите попытку");
+        }
+    }
+
+    private void disconnect(){
+        ResponseCode code = httpClient.disconnect(clientName);
+        switch (code){
+            case USER_DISCONNECTED -> {
+                System.out.println("Успешное удаление с сервера");
+                System.out.println("Вы покидаете магазин. До свидания!");
+                System.exit(-1);
+            }
+            case USER_NOT_FOUND -> System.out.println("Пользователь не найден на сервере");
+            default -> System.out.println("Ошибка при отключении. Повторите попытку");
         }
     }
 
     private void quit(){
-        int result = httpClient.disconnect(clientName);
-        if (result == 200) {
-            System.out.println("Вы покидаете магазин. До свидания!");
-            System.exit(-1);
-        } else {
-            System.out.println("Не удалось разорвать соединение. Повторите попытку");
-        }
+        System.out.println("Вы покидаете магазин. До свидания!");
+        System.exit(-1);
     }
 
     private boolean checkBasket(String name){
@@ -227,4 +256,29 @@ public class Client {
         }
         return flag;
     }
+
+    private int checkShop(String name, int n){
+        boolean flag_p = false;
+        boolean flag_n = false;
+        int currentCount = -1;
+        int price = -1;
+        shopList = httpClient.getList();
+        for(Product product: shopList){
+            if (product.getProductName().equals(name)) {
+                flag_p = true;
+                currentCount = product.getCount();
+                if (product.getCount() >= n) {
+                    flag_n = true;
+                    price = product.getPrice();
+                    break;
+                }
+            }
+        }
+        if(!flag_p) System.out.println("Продукт " + name + " не найден");
+        else {
+            if (!flag_n) System.out.println("Продукт " + name + " имеется в количестве " + currentCount + ". Укажите меньшее число для покупки");
+        }
+        return price;
+    }
+
 }
